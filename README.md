@@ -2,10 +2,11 @@
 
 *Accurate Range+CSI on the ESP32 using Multipath Compensation*
 
-
 ![Wi-PRO is a system for getting high-accuracy, low-bias indoor range estimation on the ESP32.](images/banner.png)
 
-Wi-PRO (Wireless Positioning with Range Offsets) is a system for getting high-accuracy, low-bias indoor range estimation on the ESP32. Wi-PRO uses a specialized multipath rejection algorithm, currently undergoing publication in IEEE DySPAN '26, to obtain high-accuracy indoor range estimation. Wi-PRO obtains meter-level accuracy in indoor scenarios with dense multipath, while the ESP32's FTM implementation can be off by by tens of meters.
+![Trilateration-based localization using 6 ESP32s in a 30m^2 space at UCSD. Wi-PRO's predictions outperform FTM significantly](images/demo.gif)
+
+Wi-PRO (Wireless Positioning with Range Offsets) is a system for getting high-accuracy, low-bias indoor range estimation on the ESP32. Wi-PRO uses a multipath rejection algorithm, (published in IEEE DySPAN '26,) to obtain high-accuracy indoor range estimation. Wi-PRO obtains meter-level accuracy in indoor scenarios with dense multipath, while the ESP32's FTM implementation can be off by by tens of meters. It is designed for use in large home-scale or building-scale deployments.
 
 This repository contains everything needed to develop a robust, meter-level-accurate localization system with ESP32 nodes. Wi-PRO nodes automatically discover eachother and initiate FTM ranging requests, and locally run Wi-PRO's algorithm to remove multipath-induced biases and extract an accurate range. FTM+CSI data can also be offloaded to a remote host machine for storage or for multi-node fusion. Wi-PRO can also collect CSI from arbitrary transmitters in monitor mode, making it a good platform for other Wi-Fi sensing applications like traffic monitoring and motion detection.
 
