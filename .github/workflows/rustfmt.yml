@@ -24,17 +24,15 @@ jobs:
     - uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
         components: rustfmt
-        
-    - name: Check formatting of Rust code with rustfmt
-      uses: actions-rust-lang/rustfmt@v1.1.2
-      with:
-        manifest-path: "./controller/Cargo.toml"
 
-    - name: Check formatting of Rust code with rustfmt
-      uses: actions-rust-lang/rustfmt@v1.1.2
-      with:
-        manifest-path: "./firmware/Cargo.toml"
-        
+    - run: |
+        cargo fmt --all --manifest-path="./controller/Cargo.toml" && \
+        echo ok
+    
+    - run: |
+        cargo fmt --all --manifest-path="./firmware/Cargo.toml" && \
+        echo ok
+    
     - uses: EndBug/add-and-commit@v10 # You can change this to use a specific version.
       with:
         message: '- cargo fmt'
