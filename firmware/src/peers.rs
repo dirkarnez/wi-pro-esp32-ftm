@@ -11,11 +11,10 @@ const MAX_PEERS: usize = 64;
 
 #[derive(Clone, Copy, Debug)]
 pub struct PeerContactStats {
-    pub last_seen: Instant,          // Last time we saw this peer
-    pub rssi: i8,                    // Signal strength
-    pub channel: u8,                 // WiFi channel
+    pub last_seen: Instant, // Last time we saw this peer
+    pub rssi: i8,           // Signal strength
+    pub channel: u8,        // WiFi channel
 }
-
 
 #[derive(Clone, Copy, Debug)]
 pub struct PeerInfo {
@@ -52,19 +51,19 @@ impl PeerList {
     }
 
     pub fn add_or_update(&mut self, peer: PeerInfo) -> Result<&mut PeerInfo, ()> {
-	// Check if peer already exists (by BSSID)
-	let index = self.peers.iter().position(|p| p.bssid == peer.bssid);
-	
-	if let Some(idx) = index {
+        // Check if peer already exists (by BSSID)
+        let index = self.peers.iter().position(|p| p.bssid == peer.bssid);
+
+        if let Some(idx) = index {
             // Update existing peer
             let existing = &mut self.peers[idx];
-	    existing.contact_stats = peer.contact_stats;
+            existing.contact_stats = peer.contact_stats;
             Ok(existing)
-	} else {
+        } else {
             // Add new peer
             self.peers.push(peer).map_err(|_| ())?;
             Ok(self.peers.last_mut().unwrap())
-	}
+        }
     }
     /// Get number of peers
     pub fn count(&self) -> usize {
@@ -87,7 +86,8 @@ impl PeerList {
 
     /// Remove peers not seen since the given time
     pub fn remove_stale(&mut self, cutoff: Instant) {
-        self.peers.retain(|peer| peer.contact_stats.last_seen >= cutoff);
+        self.peers
+            .retain(|peer| peer.contact_stats.last_seen >= cutoff);
     }
 
     //// Find peer by BSSID

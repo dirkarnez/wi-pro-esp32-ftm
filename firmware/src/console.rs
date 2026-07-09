@@ -60,9 +60,11 @@ async fn handle_command(cmd: &str, args: &str) {
             info!("  interval <ms> - Set FTM request interval in milliseconds");
             info!("  promi <1|0> - enable promiscuous mode");
             info!("  channel <ch>/<bw> - Set WiFi channel (e.g., channel 6/40)");
-	    info!("  burst <16|25|32|64> - Set number of FTMs to be sent");
-	    info!("  wipro <1|0> - run Wi-PRO on-chip");
-	    info!("  wipro_iters <iters> - run <iters> steps of l1 interpolation, set 0 to disable.");
+            info!("  burst <16|25|32|64> - Set number of FTMs to be sent");
+            info!("  wipro <1|0> - run Wi-PRO on-chip");
+            info!(
+                "  wipro_iters <iters> - run <iters> steps of l1 interpolation, set 0 to disable."
+            );
         }
         "peers" => {
             peers::print_all_peers().await;
@@ -102,12 +104,12 @@ async fn handle_command(cmd: &str, args: &str) {
             );
         }
         "mute" => {
-	    if args.is_empty() {
-	    } else {
-		if let Ok(mute) = args.parse::<u32>(){
-		    crate::ftm::set_mute(mute != 0).await;
-		}
-	    }
+            if args.is_empty() {
+            } else {
+                if let Ok(mute) = args.parse::<u32>() {
+                    crate::ftm::set_mute(mute != 0).await;
+                }
+            }
         }
         "interval" => {
             if args.is_empty() {
@@ -196,46 +198,43 @@ async fn handle_command(cmd: &str, args: &str) {
                 }
             }
         }
-	"beacon" => {
+        "beacon" => {
             if args.is_empty() {
             } else {
-		match args.parse::<i32>() {
-		    Ok(new_beacon) => {
-			crate::espnow::set_beacon(new_beacon).await;
-		    }
-		    Err(_) => {
-		    }
-		}
+                match args.parse::<i32>() {
+                    Ok(new_beacon) => {
+                        crate::espnow::set_beacon(new_beacon).await;
+                    }
+                    Err(_) => {}
+                }
             }
         }
-	"burst" => {
+        "burst" => {
             if args.is_empty() {
             } else {
                 match args.parse::<i32>() {
                     Ok(new_burst) => {
-			crate::ftm::set_burst(new_burst).await;
+                        crate::ftm::set_burst(new_burst).await;
                     }
-                    Err(_) => {
-                    }
+                    Err(_) => {}
                 }
             }
-
-	}
-	"wipro" => {
-	    if args.is_empty() {
-	    } else {
-		if let Ok(run) = args.parse::<u32>(){
-		    crate::ftm::set_run_wipro(run != 0).await;
-		}
-	    }
         }
-	"wipro_iters" => {
-	    if args.is_empty() {
-	    } else {
-		if let Ok(iters) = args.parse::<u32>(){
-		    crate::wipro::set_l1_iters(iters).await;
-		}
-	    }
+        "wipro" => {
+            if args.is_empty() {
+            } else {
+                if let Ok(run) = args.parse::<u32>() {
+                    crate::ftm::set_run_wipro(run != 0).await;
+                }
+            }
+        }
+        "wipro_iters" => {
+            if args.is_empty() {
+            } else {
+                if let Ok(iters) = args.parse::<u32>() {
+                    crate::wipro::set_l1_iters(iters).await;
+                }
+            }
         }
 
         "" => {

@@ -30,7 +30,7 @@ async fn scan() {
                 ghz_2_channels: 0,
                 ghz_5_channels: 0, // 5ghz not supported, will ignore this
             },
-	    coex_background_scan: false
+            coex_background_scan: false,
         };
 
         let result = esp_idf_sys::esp_wifi_scan_start(&scan_config as *const _, true);
@@ -73,8 +73,13 @@ async fn scan() {
                         .unwrap_or(ap.ssid.len());
 
                     if let Ok(ssid) = core::str::from_utf8(&ap.ssid[..ssid_len]) {
-                        info!("  [{}] SSID: '{}', RSSI: {}, Channel: {}",
-                              i + 1, ssid, ap.rssi, ap.primary);
+                        info!(
+                            "  [{}] SSID: '{}', RSSI: {}, Channel: {}",
+                            i + 1,
+                            ssid,
+                            ap.rssi,
+                            ap.primary
+                        );
 
                         // Check if this is one of our ESP devices
                         if ssid.starts_with(softap_prefix) {

@@ -23,10 +23,18 @@ pub struct OutputFiles {
     pub range_file: File,
 }
 
-pub async fn connect_serial(port_name: String, output_path: Option<PathBuf>) -> (mpsc::Sender<String>, mpsc::Receiver<tlv::ESPEvent>, tokio::task::JoinHandle<()>, tokio::task::JoinHandle<()> ) {
+pub async fn connect_serial(
+    port_name: String,
+    output_path: Option<PathBuf>,
+) -> (
+    mpsc::Sender<String>,
+    mpsc::Receiver<tlv::ESPEvent>,
+    tokio::task::JoinHandle<()>,
+    tokio::task::JoinHandle<()>,
+) {
     let (tx, rx) = mpsc::channel::<String>(100);
-    let (msg_tx, msg_rx) = mpsc::channel::<tlv::ESPEvent>(100);  // New channel for raw messages
-    
+    let (msg_tx, msg_rx) = mpsc::channel::<tlv::ESPEvent>(100); // New channel for raw messages
+
     let mut out_files: Option<OutputFiles> = {
         if let Some(output_path) = output_path {
             let out_file_path = output_path.join("raw.dat");
@@ -35,7 +43,7 @@ pub async fn connect_serial(port_name: String, output_path: Option<PathBuf>) -> 
                 raw_file: File::create(output_path.join("raw.dat")).unwrap(),
                 ftm_file: File::create(output_path.join("ftm.csv")).unwrap(),
                 csi_file: File::create(output_path.join("csi.csv")).unwrap(),
-		dbg_file: File::create(output_path.join("dbg.csv")).unwrap(),
+                dbg_file: File::create(output_path.join("dbg.csv")).unwrap(),
                 range_file: File::create(output_path.join("range.csv")).unwrap(),
             })
         } else {
@@ -63,23 +71,25 @@ pub async fn connect_serial(port_name: String, output_path: Option<PathBuf>) -> 
                     break;
                 }
                 Ok(_) => {
-		    if let Some(ref mut out_files) = out_files {
-			out_files.raw_file.write_all(line.as_bytes()).expect("Failed to write!");
-		    }
-		    if let Some(fields) = tlv::parse(&line) {
-			if let Some(event) = handle_message(fields, &mut out_files) {
-			    if let Err(_e) = msg_tx.send(event).await {
-				eprintln!("Error sending raw message!");
+                    if let Some(ref mut out_files) = out_files {
+                        out_files
+                            .raw_file
+                            .write_all(line.as_bytes())
+                            .expect("Failed to write!");
+                    }
+                    if let Some(fields) = tlv::parse(&line) {
+                        if let Some(event) = handle_message(fields, &mut out_files) {
+                            if let Err(_e) = msg_tx.send(event).await {
+                                eprintln!("Error sending raw message!");
                             }
-			}
-		    } else {
-			let line_trim = line.trim();
-			if line_trim.len() > 4 {
-			    println!("{}", line_trim);
-			    
-			}
-		    }
-		}
+                        }
+                    } else {
+                        let line_trim = line.trim();
+                        if line_trim.len() > 4 {
+                            println!("{}", line_trim);
+                        }
+                    }
+                }
                 Err(e) => {
                     eprintln!("Error reading: {}", e);
                     break;
@@ -180,11 +190,11 @@ fn handle_message(msg: Vec<&[u8]>, out_files: &mut Option<OutputFiles>) -> Optio
     };
 
     let event_result: Result<tlv::ESPEvent, String> = match msg_type.as_ref() {
-        "CSI"     => tlv::parse_csi(msg, own_mac, host_time_ms).map(tlv::ESPEvent::CSI),
-        "FTM"     => tlv::parse_ftm(msg, own_mac, host_time_ms).map(tlv::ESPEvent::FTM),
-        "DBG"     => tlv::parse_dbg(msg, own_mac, host_time_ms).map(tlv::ESPEvent::DBG),
-        "RANGE"   => tlv::parse_range(msg, own_mac, host_time_ms).map(tlv::ESPEvent::Range),
-        _         => return None,
+        "CSI" => tlv::parse_csi(msg, own_mac, host_time_ms).map(tlv::ESPEvent::CSI),
+        "FTM" => tlv::parse_ftm(msg, own_mac, host_time_ms).map(tlv::ESPEvent::FTM),
+        "DBG" => tlv::parse_dbg(msg, own_mac, host_time_ms).map(tlv::ESPEvent::DBG),
+        "RANGE" => tlv::parse_range(msg, own_mac, host_time_ms).map(tlv::ESPEvent::Range),
+        _ => return None,
     };
 
     match event_result {
@@ -204,10 +214,10 @@ fn handle_message(msg: Vec<&[u8]>, out_files: &mut Option<OutputFiles>) -> Optio
 }
 pub fn write_event(event: &tlv::ESPEvent, out_files: &mut OutputFiles) -> std::io::Result<()> {
     let file = match event {
-        tlv::ESPEvent::CSI(_)     => &mut out_files.csi_file,
-        tlv::ESPEvent::FTM(_)     => &mut out_files.ftm_file,
-	tlv::ESPEvent::DBG(_)     => &mut out_files.dbg_file,
-        tlv::ESPEvent::Range(_)   => &mut out_files.range_file,
+        tlv::ESPEvent::CSI(_) => &mut out_files.csi_file,
+        tlv::ESPEvent::FTM(_) => &mut out_files.ftm_file,
+        tlv::ESPEvent::DBG(_) => &mut out_files.dbg_file,
+        tlv::ESPEvent::Range(_) => &mut out_files.range_file,
     };
 
     for line in event.to_csv() {

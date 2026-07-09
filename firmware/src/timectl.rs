@@ -19,7 +19,6 @@ pub static MAC_FF_OFFSET: AtomicI64 = AtomicI64::new(0);
 
 pub static _INTERNAL_OFFSET: AtomicI64 = AtomicI64::new(0);
 
-
 pub fn get_mac_ff_time() -> i64 {
     let mac_raw = get_mac_counter();
     mac_raw.wrapping_add(MAC_FF_OFFSET.load(Ordering::Relaxed))

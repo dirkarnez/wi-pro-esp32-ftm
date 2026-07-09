@@ -1,6 +1,10 @@
 use crate::config::CONFIG;
 use crate::csi;
 use core::fmt::Write;
+use core::sync::atomic::{AtomicU32, Ordering};
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::mutex::Mutex;
+use embassy_time::{Duration, Timer};
 use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::hal::modem::Modem;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
@@ -8,12 +12,8 @@ use esp_idf_svc::sys as esp_idf_sys;
 use esp_idf_svc::wifi::{
     AccessPointConfiguration, AuthMethod, BlockingWifi, ClientConfiguration, Configuration, EspWifi,
 };
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use embassy_sync::mutex::Mutex;
 use heapless::String;
-use log::{info, debug};
-use embassy_time::{Duration, Timer};
-use core::sync::atomic::{AtomicU32, Ordering};
+use log::{debug, info};
 
 pub struct WifiState {
     pub channel: u8,
@@ -21,10 +21,9 @@ pub struct WifiState {
 }
 
 pub static WIFI_STATE: Mutex<CriticalSectionRawMutex, WifiState> = Mutex::new(WifiState {
-    channel: 6,      // default
+    channel: 6,     // default
     use_ht40: true, // default
 });
-
 
 unsafe extern "C" fn promiscuous_rx_callback(
     buf: *mut core::ffi::c_void,
@@ -36,25 +35,25 @@ unsafe extern "C" fn promiscuous_rx_callback(
 
     // let pkt = buf as *const esp_idf_sys::wifi_promiscuous_pkt_t;
     // let rx_ctrl = &(*pkt).rx_ctrl;
-    
+
     // // Get the payload (802.11 frame)
     // let payload = core::slice::from_raw_parts(
     //     (*pkt).payload.as_ptr(),
     //     rx_ctrl.sig_len() as usize
     // );
-    
+
     // if payload.len() >= 16 {  // Need at least 16 bytes for FC + Duration + Addr1 + start of Addr2
     //     let frame_control = u16::from_le_bytes([payload[0], payload[1]]);
     //     let frame_type = (frame_control >> 2) & 0x0003;
     //     let frame_subtype = (frame_control >> 4) & 0x000F;
-        
+
     //     // Extract MAC addresses
     //     // Address 1 (receiver): bytes 4-9
     //     let addr1 = &payload[4..10];
     //     // Address 2 (transmitter): bytes 10-15
     //     let addr2 = &payload[10..16];
-        
-    //     info!("FC: 0x{:04x}, Type: {}, Subtype: {}", 
+
+    //     info!("FC: 0x{:04x}, Type: {}, Subtype: {}",
     //           frame_control, frame_type, frame_subtype);
     //     info!("  Addr1 (RX): {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
     //           addr1[0], addr1[1], addr1[2], addr1[3], addr1[4], addr1[5]);
@@ -65,10 +64,10 @@ unsafe extern "C" fn promiscuous_rx_callback(
 
 pub fn set_promi(promi_en: bool) {
     unsafe {
-    	let filter = esp_idf_sys::wifi_promiscuous_filter_t {
-	    filter_mask: esp_idf_sys::WIFI_PROMIS_FILTER_MASK_DATA 
-	};
-	esp_idf_sys::esp_wifi_set_promiscuous_filter(&filter as *const _);
+        let filter = esp_idf_sys::wifi_promiscuous_filter_t {
+            filter_mask: esp_idf_sys::WIFI_PROMIS_FILTER_MASK_DATA,
+        };
+        esp_idf_sys::esp_wifi_set_promiscuous_filter(&filter as *const _);
         esp_idf_sys::esp_wifi_set_promiscuous(promi_en);
         esp_idf_sys::esp_wifi_set_promiscuous_rx_cb(Some(promiscuous_rx_callback));
     }
@@ -95,10 +94,10 @@ pub async fn set_channel(channel: u8, use_ht40: bool) -> Result<(), esp_idf_sys:
 
         if result == esp_idf_sys::ESP_OK {
             // Update the global state
-	    let mut state = WIFI_STATE.lock().await;
-	    state.channel = channel;
-	    state.use_ht40 = use_ht40;
-            
+            let mut state = WIFI_STATE.lock().await;
+            state.channel = channel;
+            state.use_ht40 = use_ht40;
+
             Ok(())
         } else {
             Err(esp_idf_sys::EspError::from(result).unwrap())
@@ -129,12 +128,7 @@ pub async fn setup(
     let softap_channel = WIFI_STATE.lock().await.channel;
 
     let mut ssid = String::<32>::new();
-    write!(
-        &mut ssid,
-        "{}",
-        softap_prefix
-    )
-    .unwrap();
+    write!(&mut ssid, "{}", softap_prefix).unwrap();
 
     let ap_config = AccessPointConfiguration {
         ssid: ssid.as_str().try_into().unwrap(),
@@ -147,13 +141,12 @@ pub async fn setup(
     };
 
     let sta_config = ClientConfiguration {
-	..Default::default()
+        ..Default::default()
     };
 
     wifi.set_configuration(&Configuration::Mixed(sta_config, ap_config))?;
     wifi.start()?;
 
-    
     info!("WiFi AP started!");
     let ip_info = wifi.wifi().ap_netif().get_ip_info()?;
     info!("AP IP address: {:?}", ip_info.ip);
@@ -247,7 +240,6 @@ pub async fn setup(
     Ok(wifi)
 }
 
-
 extern "C" {
     fn esp_wifi_internal_get_mac_clock_time() -> i64;
 }
@@ -258,18 +250,18 @@ static MAC_LAST_LOWER: AtomicU32 = AtomicU32::new(0);
 pub fn get_mac_counter() -> i64 {
     let raw = unsafe { esp_wifi_internal_get_mac_clock_time() };
     let hardware_lower_32 = raw as u32;
-    
+
     // Simple overflow detection with 32-bit atomics (always lock-free on ESP32)
     let last_lower = MAC_LAST_LOWER.load(Ordering::Relaxed);
-    
+
     // Update last_lower optimistically
     MAC_LAST_LOWER.store(hardware_lower_32, Ordering::Relaxed);
-    
+
     // If we wrapped, increment upper bits
     if hardware_lower_32 < last_lower {
         MAC_UPPER_BITS.fetch_add(1, Ordering::Relaxed);
     }
-    
+
     let upper = MAC_UPPER_BITS.load(Ordering::Relaxed);
     ((upper as u64) << 32 | hardware_lower_32 as u64) as i64
 }
@@ -280,18 +272,18 @@ pub async fn mac_counter_keepalive() {
         // Call get_mac_counter to update overflow tracking
         let counter = get_mac_counter();
         debug!("MAC counter keepalive: {:016x}", counter);
-        
+
         // Wait 60 seconds
         Timer::after(Duration::from_secs(60)).await;
     }
 }
 
-pub async fn get_channel() -> u8{
+pub async fn get_channel() -> u8 {
     return WIFI_STATE.lock().await.channel;
 }
 
 #[allow(dead_code)]
-pub async fn get_ht40() -> bool{
+pub async fn get_ht40() -> bool {
     return WIFI_STATE.lock().await.use_ht40;
 }
 
@@ -312,7 +304,8 @@ pub fn sta_get_ip() -> Option<std::net::Ipv4Addr> {
             return None;
         }
         let mut ip_info: esp_idf_sys::esp_netif_ip_info_t = core::mem::zeroed();
-        if esp_idf_sys::esp_netif_get_ip_info(netif, &mut ip_info as *mut _) != esp_idf_sys::ESP_OK {
+        if esp_idf_sys::esp_netif_get_ip_info(netif, &mut ip_info as *mut _) != esp_idf_sys::ESP_OK
+        {
             return None;
         }
         if ip_info.ip.addr == 0 {
@@ -325,36 +318,35 @@ pub fn sta_get_ip() -> Option<std::net::Ipv4Addr> {
     }
 }
 
-
 pub fn try_connect() {
     if !is_sta_connected() {
         info!("STA not connected, attempting reconnect...");
-        
+
         let (ssid, password) = CONFIG.lock(|cell| {
             let config = cell.borrow();
             (config.softap_prefix, "password")
         });
-        
+
         unsafe {
             // Set STA configuration before connecting
             let mut wifi_config: esp_idf_sys::wifi_config_t = core::mem::zeroed();
-            
+
             // Copy SSID
             let ssid_bytes = ssid.as_bytes();
             let ssid_len = ssid_bytes.len().min(32);
             wifi_config.sta.ssid[..ssid_len].copy_from_slice(&ssid_bytes[..ssid_len]);
-            
+
             // Copy password
             let pwd_bytes = password.as_bytes();
             let pwd_len = pwd_bytes.len().min(64);
             wifi_config.sta.password[..pwd_len].copy_from_slice(&pwd_bytes[..pwd_len]);
-            
+
             // Set the config
             esp_idf_sys::esp_wifi_set_config(
                 esp_idf_sys::wifi_interface_t_WIFI_IF_STA,
                 &mut wifi_config as *mut _,
             );
-            
+
             // Now try to connect
             let result = esp_idf_sys::esp_wifi_connect();
             if result == esp_idf_sys::ESP_OK {
@@ -375,7 +367,7 @@ pub fn disconnect() {
         } else {
             info!("Disconnect failed: {}", result);
         }
-        
+
         // Clear STA configuration to prevent auto-reconnect
         let mut wifi_config: esp_idf_sys::wifi_config_t = core::mem::zeroed();
         // SSID and password already zeroed, just set it
@@ -383,7 +375,7 @@ pub fn disconnect() {
             esp_idf_sys::wifi_interface_t_WIFI_IF_STA,
             &mut wifi_config as *mut _,
         );
-        
+
         info!("STA config cleared");
     }
 }

@@ -1,8 +1,8 @@
 use crate::config::CONFIG;
+use crate::csi::{dump_csi_buf, reset_ftm_csi_buf};
 use crate::espnow::{send_ftm_notification, FtmSyncPacket};
 use crate::peers::PeerContactStats;
 use crate::peers::PEER_LIST;
-use crate::csi::{reset_ftm_csi_buf, dump_csi_buf};
 use crate::wipro::process_report;
 use base64::{engine::general_purpose, Engine as _};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
@@ -11,8 +11,8 @@ use embassy_sync::mutex::Mutex;
 use embassy_sync::signal::Signal;
 use embassy_time::{Duration, Instant, Timer};
 use esp_idf_svc::sys as esp_idf_sys;
-use std::string::String;
 use log::{info, warn};
+use std::string::String;
 
 pub struct FtmState {
     pub mute: bool,
@@ -20,12 +20,11 @@ pub struct FtmState {
     pub estimate_range: bool,
 }
 
-pub static FTM_STATE: Mutex<CriticalSectionRawMutex, FtmState> =
-    Mutex::new(FtmState {
-	mute: true,
-	num_burst: 16,
-	estimate_range: false
-    });
+pub static FTM_STATE: Mutex<CriticalSectionRawMutex, FtmState> = Mutex::new(FtmState {
+    mute: true,
+    num_burst: 16,
+    estimate_range: false,
+});
 
 #[derive(Clone, Copy, Debug)]
 pub struct PeerFtmStats {
@@ -40,7 +39,6 @@ const MAX_FTM_BUF_LEN: usize = size_of::<esp_idf_sys::wifi_ftm_report_entry_t>()
 const MAX_BASE64_LEN: usize = ((MAX_FTM_BUF_LEN + 2) / 3) * 4 + 4;
 
 static mut FTM_CFG: esp_idf_sys::wifi_ftm_initiator_cfg_t = unsafe { core::mem::zeroed() };
-
 
 #[derive(Copy, Clone)]
 pub struct FtmReportMetadata {
@@ -58,22 +56,20 @@ pub struct FtmReport {
     pub entries: [esp_idf_sys::wifi_ftm_report_entry_t; MAX_FTM_ENTRIES],
 }
 
-
 static mut FTM_REPORT_METADATA: Option<FtmReportMetadata> = None;
-static mut FTM_ENTRIES_BUFFER: [esp_idf_sys::wifi_ftm_report_entry_t; MAX_FTM_ENTRIES] = 
+static mut FTM_ENTRIES_BUFFER: [esp_idf_sys::wifi_ftm_report_entry_t; MAX_FTM_ENTRIES] =
     unsafe { core::mem::zeroed() };
 
 pub struct FtmNotification {
     pub peer_mac: [u8; 6],
     pub sync_info: FtmSyncPacket,
-    pub _rx_mac_time: i64
+    pub _rx_mac_time: i64,
 }
 
 static FTM_RADIO_DONE: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 
 pub static FTM_NOTIFY_CHANNEL: Channel<CriticalSectionRawMutex, FtmNotification, 8> =
     Channel::new();
-
 
 #[allow(static_mut_refs)]
 pub unsafe fn handle_ftm_report_event(event_data: *const esp_idf_sys::wifi_event_ftm_report_t) {
@@ -82,9 +78,9 @@ pub unsafe fn handle_ftm_report_event(event_data: *const esp_idf_sys::wifi_event
         return;
     }
     let report = &*event_data;
-    
+
     // Store metadata only
-    
+
     FTM_REPORT_METADATA = Some(FtmReportMetadata {
         peer_mac: report.peer_mac,
         _rtt_raw: report.rtt_raw,
@@ -93,11 +89,9 @@ pub unsafe fn handle_ftm_report_event(event_data: *const esp_idf_sys::wifi_event
         _status: report.status,
         num_entries: report.ftm_report_num_entries.min(MAX_FTM_ENTRIES as u8),
     });
-    
-    FTM_RADIO_DONE.signal(());  // Wake waiting task
+
+    FTM_RADIO_DONE.signal(()); // Wake waiting task
 }
-
-
 
 // FTM initiate function
 pub async fn initiate_ftm(peer_bssid: [u8; 6], channel: u8, n_ftm: i32) -> Result<(), i32> {
@@ -107,7 +101,7 @@ pub async fn initiate_ftm(peer_bssid: [u8; 6], channel: u8, n_ftm: i32) -> Resul
     let mut msg_buffer = String::new();
     unsafe {
         // Configure FTM session
-	FTM_CFG = esp_idf_sys::wifi_ftm_initiator_cfg_t {
+        FTM_CFG = esp_idf_sys::wifi_ftm_initiator_cfg_t {
             resp_mac: peer_bssid,
             channel: channel,
             frm_count: n_ftm as u8,
@@ -115,42 +109,42 @@ pub async fn initiate_ftm(peer_bssid: [u8; 6], channel: u8, n_ftm: i32) -> Resul
             use_get_report_api: true,
         };
 
-	reset_ftm_csi_buf(&peer_bssid, (n_ftm*2) as usize).await;
+        reset_ftm_csi_buf(&peer_bssid, (n_ftm * 2) as usize).await;
         let result = esp_idf_sys::esp_wifi_ftm_initiate_session(&raw mut FTM_CFG as *mut _);
 
         if result == esp_idf_sys::ESP_OK {
-	    FTM_RADIO_DONE.wait().await;
-	    #[allow(static_mut_refs)]
-	    let report = if let Some(metadata) = FTM_REPORT_METADATA.take() {
+            FTM_RADIO_DONE.wait().await;
+            #[allow(static_mut_refs)]
+            let report = if let Some(metadata) = FTM_REPORT_METADATA.take() {
                 let result = esp_idf_sys::esp_wifi_ftm_get_report(
-		    FTM_ENTRIES_BUFFER.as_mut_ptr(),
-		    metadata.num_entries
+                    FTM_ENTRIES_BUFFER.as_mut_ptr(),
+                    metadata.num_entries,
                 );
-                
+
                 if result == esp_idf_sys::ESP_OK {
-		    // Build full report for processing
-		    let mut report = FtmReport {
-			meta: metadata,
+                    // Build full report for processing
+                    let mut report = FtmReport {
+                        meta: metadata,
                         entries: [core::mem::zeroed(); MAX_FTM_ENTRIES],
-		    };
-		    
-		    report.entries[..metadata.num_entries as usize]
+                    };
+
+                    report.entries[..metadata.num_entries as usize]
                         .copy_from_slice(&FTM_ENTRIES_BUFFER[..metadata.num_entries as usize]);
-		    report
+                    report
                 } else {
-		    warn!("esp_wifi_ftm_get_report failed: {}", result);
-		    return Err(result);
+                    warn!("esp_wifi_ftm_get_report failed: {}", result);
+                    return Err(result);
                 }
-	    } else {
-		warn!("couldn't find FTM report metadata");
-		return Err(1);
-	    };
-	    
-	    let run_wipro = FTM_STATE.lock().await.estimate_range;
-	    if run_wipro {
-		process_report(&report).await;
-	    }
-	    
+            } else {
+                warn!("couldn't find FTM report metadata");
+                return Err(1);
+            };
+
+            let run_wipro = FTM_STATE.lock().await.estimate_range;
+            if run_wipro {
+                process_report(&report).await;
+            }
+
             //get peer
             let peer_list = PEER_LIST.lock().await;
             if let Some(peer) = peer_list.find_by_bssid(&report.meta.peer_mac) {
@@ -161,37 +155,38 @@ pub async fn initiate_ftm(peer_bssid: [u8; 6], channel: u8, n_ftm: i32) -> Resul
                 );
             } else {
                 // we FTM'ed a peer we don't know about? Shouldn't happen.
-		info!("FTM'd peer not in list!")
+                info!("FTM'd peer not in list!")
             }
             drop(peer_list);
 
-	    msg_buffer.clear();
-	    use core::fmt::Write;
-	    let _ = write!(msg_buffer,
-			   "\x02FTM\x01\
+            msg_buffer.clear();
+            use core::fmt::Write;
+            let _ = write!(
+                msg_buffer,
+                "\x02FTM\x01\
 			    {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}\x01\
 			    {}\x01",
-			   report.meta.peer_mac[0],
-                           report.meta.peer_mac[1],
-                           report.meta.peer_mac[2],
-                           report.meta.peer_mac[3],
-                           report.meta.peer_mac[4],
-                           report.meta.peer_mac[5],
-			   report.meta.num_entries
-	    ); // switch to one large message
-	    print!("{}", msg_buffer);
+                report.meta.peer_mac[0],
+                report.meta.peer_mac[1],
+                report.meta.peer_mac[2],
+                report.meta.peer_mac[3],
+                report.meta.peer_mac[4],
+                report.meta.peer_mac[5],
+                report.meta.num_entries
+            ); // switch to one large message
+            print!("{}", msg_buffer);
             for i in 0..report.meta.num_entries {
                 let entry = &report.entries[i as usize];
                 let entry_bytes = core::slice::from_raw_parts(
                     entry as *const _ as *const u8,
                     core::mem::size_of::<esp_idf_sys::wifi_ftm_report_entry_t>(),
                 );
-		
+
                 match general_purpose::STANDARD.encode_slice(entry_bytes, &mut base64_buffer) {
                     Ok(encoded_len) => {
                         if let Ok(encoded_str) = core::str::from_utf8(&base64_buffer[..encoded_len])
                         {
-			    msg_buffer.clear();
+                            msg_buffer.clear();
                             let _ = write!(msg_buffer, "{}\x01", encoded_str);
                             print!("{}", msg_buffer);
                         } else {
@@ -200,14 +195,14 @@ pub async fn initiate_ftm(peer_bssid: [u8; 6], channel: u8, n_ftm: i32) -> Resul
                     Err(_) => {}
                 }
             }
-	    drop(msg_buffer);
-	    drop(base64_buffer);
-	    dump_csi_buf(true).await;
-	    print!("\x03\r\n");
-	    
+            drop(msg_buffer);
+            drop(base64_buffer);
+            dump_csi_buf(true).await;
+            print!("\x03\r\n");
+
             Ok(())
         } else {
-	    dump_csi_buf(false).await;
+            dump_csi_buf(false).await;
             Err(result)
         }
     }
@@ -277,9 +272,11 @@ pub async fn contact_loop() {
                         peer.ftm_stats.seq = peer.ftm_stats.seq.wrapping_add(1);
                     }
                     drop(peer_list);
-		    let num_ftm = FTM_STATE.lock().await.num_burst;
+                    let num_ftm = FTM_STATE.lock().await.num_burst;
 
-                    match initiate_ftm(peer_copy.bssid, peer_copy.contact_stats.channel, num_ftm).await {
+                    match initiate_ftm(peer_copy.bssid, peer_copy.contact_stats.channel, num_ftm)
+                        .await
+                    {
                         Ok(_) => {
                             info!("FTM completed for {}", peer_copy.bssid_str());
                         }
@@ -294,7 +291,7 @@ pub async fn contact_loop() {
             drop(peer_list);
         }
 
-	// can't do FTMs faster than this or things start to break
+        // can't do FTMs faster than this or things start to break
         if t_to_next < Duration::from_millis(300) {
             t_to_next = Duration::from_millis(300);
         }
@@ -327,7 +324,7 @@ pub async fn ftm_notification_task() {
                 },
             })
             .unwrap();
-	
+
         drop(peer_list);
         info!(
             "FTM notification received for {}: {}/{}",
@@ -352,10 +349,10 @@ pub async fn set_mute(mute: bool) {
 pub async fn set_burst(num_burst: i32) {
     let mut state = FTM_STATE.lock().await;
     if num_burst == 16 || num_burst == 24 || num_burst == 32 || num_burst == 64 {
-	state.num_burst = num_burst;
-	info!("Set bursts to {}", state.num_burst);
+        state.num_burst = num_burst;
+        info!("Set bursts to {}", state.num_burst);
     } else {
-	info!("Must set burst count to <16|24|32|64>");
+        info!("Must set burst count to <16|24|32|64>");
     }
 }
 

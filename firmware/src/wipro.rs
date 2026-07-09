@@ -1,11 +1,11 @@
-use base64::{engine::general_purpose, Engine as _};
+use crate::csi::{CsiData, FTM_CSI_STATE};
 use crate::ftm::FtmReport;
-use crate::csi::{FTM_CSI_STATE, CsiData};
-use esp_idf_svc::sys as esp_idf_sys;
-use log::info;
+use base64::{engine::general_purpose, Engine as _};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
-use nalgebra::{SVector,DMatrix};
+use esp_idf_svc::sys as esp_idf_sys;
+use log::info;
+use nalgebra::{DMatrix, SVector};
 use num_complex::Complex;
 
 type HVec40 = SVector<Complex<f32>, 128>;
@@ -17,18 +17,15 @@ extern "C" {
 }
 
 pub struct WiproState {
-    pub num_l1_iters: u32
+    pub num_l1_iters: u32,
 }
 
 pub static WIPRO_STATE: Mutex<CriticalSectionRawMutex, WiproState> =
-    Mutex::new(WiproState {
-	num_l1_iters: 3
-    });
-
+    Mutex::new(WiproState { num_l1_iters: 3 });
 
 pub struct CompressedIdft {
-    pub left: DMatrix<Complex<f32>>,   // num_points × r
-    pub right: DMatrix<Complex<f32>>,  // r × 128
+    pub left: DMatrix<Complex<f32>>,  // num_points × r
+    pub right: DMatrix<Complex<f32>>, // r × 128
     pub d_range: Vec<f32>,
     pub sinc_rise_comp: f32,
 }
@@ -45,8 +42,8 @@ fn bytes_to_complex_vec(bytes: &[u8]) -> Vec<Complex<f32>> {
     let count = bytes.len() / 8;
     let mut out = Vec::with_capacity(count);
     for i in 0..count {
-        let re = f32::from_le_bytes(bytes[i*8..i*8+4].try_into().unwrap());
-        let im = f32::from_le_bytes(bytes[i*8+4..i*8+8].try_into().unwrap());
+        let re = f32::from_le_bytes(bytes[i * 8..i * 8 + 4].try_into().unwrap());
+        let im = f32::from_le_bytes(bytes[i * 8 + 4..i * 8 + 8].try_into().unwrap());
         out.push(Complex::new(re, im));
     }
     out
@@ -56,7 +53,9 @@ fn bytes_to_f32_vec(bytes: &[u8]) -> Vec<f32> {
     let count = bytes.len() / 4;
     let mut out = Vec::with_capacity(count);
     for i in 0..count {
-        out.push(f32::from_le_bytes(bytes[i*4..i*4+4].try_into().unwrap()));
+        out.push(f32::from_le_bytes(
+            bytes[i * 4..i * 4 + 4].try_into().unwrap(),
+        ));
     }
     out
 }
@@ -79,14 +78,11 @@ pub fn get_or_init_idft() -> &'static CompressedIdft {
     })
 }
 
-
 pub fn load_compressed_idft(num_points: usize, r: usize) -> CompressedIdft {
     let l_data = bytes_to_complex_vec(L_BYTES);
     let r_data = bytes_to_complex_vec(R_BYTES);
     let d_data = bytes_to_f32_vec(DRANGE_BYTES);
-    let sinc_rise_comp = f32::from_le_bytes(
-        SINC_RISE_COMP_BYTES[0..4].try_into().unwrap(),
-    );
+    let sinc_rise_comp = f32::from_le_bytes(SINC_RISE_COMP_BYTES[0..4].try_into().unwrap());
 
     let left = DMatrix::from_row_slice(num_points, r, &l_data);
     let right = DMatrix::from_row_slice(r, 128, &r_data);
@@ -95,10 +91,9 @@ pub fn load_compressed_idft(num_points: usize, r: usize) -> CompressedIdft {
         left,
         right,
         d_range: d_data,
-	sinc_rise_comp,
+        sinc_rise_comp,
     }
 }
-
 
 /// Apply: result = L @ (R @ h), where h is 128×1
 pub fn apply_idft(idft: &CompressedIdft, h: &HVec40) -> Vec<Complex<f32>> {
@@ -128,16 +123,16 @@ pub fn apply_idft(idft: &CompressedIdft, h: &HVec40) -> Vec<Complex<f32>> {
 }
 
 pub fn fft_init() {
-    FFT_INIT.call_once(|| {
-        unsafe {
-            esp_idf_sys::dsps_fft2r_init_fc32(core::ptr::null_mut(), 128);
-        }
+    FFT_INIT.call_once(|| unsafe {
+        esp_idf_sys::dsps_fft2r_init_fc32(core::ptr::null_mut(), 128);
     });
 }
 
 fn load_h_40(entry: &CsiData) -> Option<Box<HVec40>> {
     let mut h = Box::new(SVector::<Complex<f32>, 128>::zeros());
-    if entry.len != 384 {return None;}
+    if entry.len != 384 {
+        return None;
+    }
     for ii in 0..128 {
         let imag = (entry.buf[128 + 2 * ii] as i8) as f32;
         let real = (entry.buf[128 + 2 * ii + 1] as i8) as f32;
@@ -145,19 +140,18 @@ fn load_h_40(entry: &CsiData) -> Option<Box<HVec40>> {
     }
     let mut sum = 0.0;
     for ii in 0..128 {
-	sum += h[ii].norm();
+        sum += h[ii].norm();
     }
     let sum_c = Complex::new(sum, 0.0f32);
     for ii in 0..128 {
-	h[ii] /= sum_c;
+        h[ii] /= sum_c;
     }
     let j = Complex::new(0.0f32, 1.0f32);
     for ii in 64..128 {
-	h[ii] *= j;
+        h[ii] *= j;
     }
     Some(h)
 }
-
 
 fn fft_ortho(h: &HVec40) -> Box<HVec40> {
     const N: usize = 128;
@@ -165,7 +159,7 @@ fn fft_ortho(h: &HVec40) -> Box<HVec40> {
 
     let mut buf = vec![0.0f32; N * 2];
     for i in 0..N {
-        buf[2 * i]     = h[i].re;
+        buf[2 * i] = h[i].re;
         buf[2 * i + 1] = h[i].im;
     }
 
@@ -176,14 +170,10 @@ fn fft_ortho(h: &HVec40) -> Box<HVec40> {
 
     let mut out = Box::new(HVec40::zeros());
     for i in 0..N {
-        out[i] = Complex::new(
-            buf[2 * i]     * scale,
-            buf[2 * i + 1] * scale,
-        );
+        out[i] = Complex::new(buf[2 * i] * scale, buf[2 * i + 1] * scale);
     }
     out
 }
-
 
 fn ifft_ortho(h: &HVec40) -> Box<HVec40> {
     const N: usize = 128;
@@ -192,8 +182,8 @@ fn ifft_ortho(h: &HVec40) -> Box<HVec40> {
     // Copy into a raw interleaved buffer and conjugate (IFFT trick)
     let mut buf = vec![0.0f32; N * 2];
     for i in 0..N {
-        buf[2 * i]     =  h[i].re;
-        buf[2 * i + 1] = -h[i].im;  // conjugate
+        buf[2 * i] = h[i].re;
+        buf[2 * i + 1] = -h[i].im; // conjugate
     }
 
     // Call esp-dsp FFT
@@ -206,22 +196,20 @@ fn ifft_ortho(h: &HVec40) -> Box<HVec40> {
     let mut out = Box::new(HVec40::zeros());
     for i in 0..N {
         out[i] = Complex::new(
-             buf[2 * i]     * scale,
-            -buf[2 * i + 1] * scale,  // conjugate + scale
+            buf[2 * i] * scale,
+            -buf[2 * i + 1] * scale, // conjugate + scale
         );
     }
     out
 }
 
-const Z_IDX_40: [usize; 114] = [2,   3,   4,   5,   6,   7,   8,   9,  10,  11,  12,  13,  14,
-				15,  16,  17,  18,  19,  20,  21,  22,  23,  24,  25,  26,  27,
-				28,  29,  30,  31,  32,  33,  34,  35,  36,  37,  38,  39,  40,
-				41,  42,  43,  44,  45,  46,  47,  48,  49,  50,  51,  52,  53,
-				54,  55,  56,  57,  58,  70,  71,  72,  73,  74,  75,  76,  77,
-				78,  79,  80,  81,  82,  83,  84,  85,  86,  87,  88,  89,  90,
-				91,  92,  93,  94,  95,  96,  97,  98,  99, 100, 101, 102, 103,
-				104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116,
-				117, 118, 119, 120, 121, 122, 123, 124, 125, 126];
+const Z_IDX_40: [usize; 114] = [
+    2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
+    28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51,
+    52, 53, 54, 55, 56, 57, 58, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86,
+    87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107,
+    108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126,
+];
 
 async fn l1_interp(h: &mut HVec40) {
     let iters = WIPRO_STATE.lock().await.num_l1_iters;
@@ -231,31 +219,31 @@ async fn l1_interp(h: &mut HVec40) {
     let mut fail = 0;
     let mut loss = std::f32::INFINITY;
     while iter < iters {
-	let mut sgn_ax = ifft_ortho(h);
-	for ji in 0..128 {
-	    let _nrm = sgn_ax[ji].norm() + 1e-9;
-	    sgn_ax[ji] /= _nrm;
-	}
-	let mut grad_ = fft_ortho(&sgn_ax);
-	for ji in 0..Z_IDX_40.len() {
-	    grad_[Z_IDX_40[ji]] = Complex::new(0.0f32, 0.0f32);
-	}
-	
-	let h_test = h.clone() - *grad_ * eps;
-	let loss_ = ifft_ortho(&h_test).map(|c| c.norm()).sum();
-	if loss_ < loss {
-	    eps *= 1.1;
-	    iter += 1;
-	    h.copy_from(&h_test);
-	    loss = loss_;
-	    fail = 0;
-	} else {
-	    eps *= 0.5;
-	    fail += 1;
-	    if fail > 10 {
-		break;
-	    }
-	}
+        let mut sgn_ax = ifft_ortho(h);
+        for ji in 0..128 {
+            let _nrm = sgn_ax[ji].norm() + 1e-9;
+            sgn_ax[ji] /= _nrm;
+        }
+        let mut grad_ = fft_ortho(&sgn_ax);
+        for ji in 0..Z_IDX_40.len() {
+            grad_[Z_IDX_40[ji]] = Complex::new(0.0f32, 0.0f32);
+        }
+
+        let h_test = h.clone() - *grad_ * eps;
+        let loss_ = ifft_ortho(&h_test).map(|c| c.norm()).sum();
+        if loss_ < loss {
+            eps *= 1.1;
+            iter += 1;
+            h.copy_from(&h_test);
+            loss = loss_;
+            fail = 0;
+        } else {
+            eps *= 0.5;
+            fail += 1;
+            if fail > 10 {
+                break;
+            }
+        }
     }
 }
 
@@ -309,66 +297,78 @@ pub async fn process_report(report: &FtmReport) {
     let csi_entries: Vec<CsiData> = {
         let guard = FTM_CSI_STATE.lock().await;
         let state = guard.borrow();
-        state.buffer.clone()   // or core::mem::take if you want to drain it here
+        state.buffer.clone() // or core::mem::take if you want to drain it here
     };
 
     let mut mean_range: f32 = 0.0;
 
     for ii in 0..report.meta.num_entries as usize {
-	let ftm_entry = report.entries[ii];
+        let ftm_entry = report.entries[ii];
 
-	// find matching CSI entry in the buffer
-	let csi_entry = {
-	    let mut idx_match: i32 = -1;
-	    for ji in 0..csi_entries.len() {
-		let csi_stamp = crate::csi::calculate_precise_timestamp_ns(&csi_entries[ji], true) * 1000;
-		let ftm_stamp = ftm_entry.t2;
-		let delta = ftm_stamp.wrapping_sub(csi_stamp) as i64;
-		if delta > -2000 && delta < 2000 {
-		    idx_match = ji as i32;
-		    break;
-		}
-	    }
-	    if idx_match == -1 {
-		continue
-	    }
-	    &csi_entries[idx_match as usize]
-	};
+        // find matching CSI entry in the buffer
+        let csi_entry = {
+            let mut idx_match: i32 = -1;
+            for ji in 0..csi_entries.len() {
+                let csi_stamp =
+                    crate::csi::calculate_precise_timestamp_ns(&csi_entries[ji], true) * 1000;
+                let ftm_stamp = ftm_entry.t2;
+                let delta = ftm_stamp.wrapping_sub(csi_stamp) as i64;
+                if delta > -2000 && delta < 2000 {
+                    idx_match = ji as i32;
+                    break;
+                }
+            }
+            if idx_match == -1 {
+                continue;
+            }
+            &csi_entries[idx_match as usize]
+        };
 
-	let Some(mut h) = load_h_40(csi_entry) else {continue};
-	l1_interp(&mut h).await;
-	let rtt_ps = diff_48bit(ftm_entry.t4 as i64, ftm_entry.t1 as i64) - 
-	    diff_48bit(ftm_entry.t3 as i64, ftm_entry.t2 as i64);
-	shift_to_zero(&mut h, rtt_ps);
-	let idft = get_or_init_idft();
-	let cir = apply_idft(idft, &h);
-	let range = estimate_range(&cir,idft);
-	mean_range += range;
-	print!(
-	    "\x02RANGE\x01{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}\x01{}\x01{}\x03\r\n",
-	    report.meta.peer_mac[0], report.meta.peer_mac[1], report.meta.peer_mac[2],
-	    report.meta.peer_mac[3], report.meta.peer_mac[4], report.meta.peer_mac[5],
-	    ftm_entry.t2,
-	    range
-	);
+        let Some(mut h) = load_h_40(csi_entry) else {
+            continue;
+        };
+        l1_interp(&mut h).await;
+        let rtt_ps = diff_48bit(ftm_entry.t4 as i64, ftm_entry.t1 as i64)
+            - diff_48bit(ftm_entry.t3 as i64, ftm_entry.t2 as i64);
+        shift_to_zero(&mut h, rtt_ps);
+        let idft = get_or_init_idft();
+        let cir = apply_idft(idft, &h);
+        let range = estimate_range(&cir, idft);
+        mean_range += range;
+        print!(
+            "\x02RANGE\x01{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}\x01{}\x01{}\x03\r\n",
+            report.meta.peer_mac[0],
+            report.meta.peer_mac[1],
+            report.meta.peer_mac[2],
+            report.meta.peer_mac[3],
+            report.meta.peer_mac[4],
+            report.meta.peer_mac[5],
+            ftm_entry.t2,
+            range
+        );
     }
     if report.meta.num_entries > 0 {
-	info!("{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}: {} meters",
-	      report.meta.peer_mac[0], report.meta.peer_mac[1], report.meta.peer_mac[2],
-	      report.meta.peer_mac[3], report.meta.peer_mac[4], report.meta.peer_mac[5],
-	      mean_range / report.meta.num_entries as f32);
+        info!(
+            "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}: {} meters",
+            report.meta.peer_mac[0],
+            report.meta.peer_mac[1],
+            report.meta.peer_mac[2],
+            report.meta.peer_mac[3],
+            report.meta.peer_mac[4],
+            report.meta.peer_mac[5],
+            mean_range / report.meta.num_entries as f32
+        );
     }
 }
 
 pub fn _dump_debug_fc32(data: &[Complex<f32>], len: usize) {
     let byte_len = len * core::mem::size_of::<Complex<f32>>();
-    let raw_bytes: &[u8] = unsafe {
-        core::slice::from_raw_parts(data.as_ptr() as *const u8, byte_len)
-    };
+    let raw_bytes: &[u8] =
+        unsafe { core::slice::from_raw_parts(data.as_ptr() as *const u8, byte_len) };
 
     let base64_len = (byte_len * 4 / 3) + 4;
     let mut base64_buf = vec![0u8; base64_len];
-    
+
     match general_purpose::STANDARD.encode_slice(raw_bytes, &mut base64_buf) {
         Ok(encoded_len) => {
             if let Ok(encoded_str) = core::str::from_utf8(&base64_buf[..encoded_len]) {
@@ -378,8 +378,7 @@ pub fn _dump_debug_fc32(data: &[Complex<f32>], len: usize) {
                      fc32\x01\
                      {}\x01\
                      {}\x03\r\n",
-                    len,
-                    encoded_str
+                    len, encoded_str
                 );
                 print!("{}", msg);
             } else {

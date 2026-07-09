@@ -1,11 +1,10 @@
 use crate::ftm::{handle_ftm_notification, FtmNotification};
 use crate::timectl::get_mac_ff_time;
-use crate::wifi::{try_connect, disconnect, sta_get_ip};
+use crate::wifi::{disconnect, sta_get_ip, try_connect};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Instant, Timer};
 use std::net::UdpSocket;
-
 
 use core::sync::atomic::{AtomicU32, Ordering};
 use esp_idf_svc::sys as esp_idf_sys;
@@ -16,7 +15,7 @@ static PACKETS_SENT: AtomicU32 = AtomicU32::new(0);
 static PACKETS_RECEIVED: AtomicU32 = AtomicU32::new(0);
 pub struct BeaconState {
     pub should_beacon: bool,
-    pub beacon_rate_ms: i32
+    pub beacon_rate_ms: i32,
 }
 
 pub static BEACON_STATE: Mutex<CriticalSectionRawMutex, BeaconState> = Mutex::new(BeaconState {
@@ -29,7 +28,7 @@ pub static BEACON_STATE: Mutex<CriticalSectionRawMutex, BeaconState> = Mutex::ne
 pub struct FtmSyncPacket {
     pub sequence: u32,
     pub is_initiator: u8, // Use u8 instead of bool for C compatibility
-    pub mac_time: i64
+    pub mac_time: i64,
 }
 
 impl FtmSyncPacket {
@@ -37,7 +36,7 @@ impl FtmSyncPacket {
         Self {
             sequence,
             is_initiator: if is_initiator { 1 } else { 0 },
-	    mac_time
+            mac_time,
         }
     }
 
@@ -66,7 +65,6 @@ pub fn send_ftm_notification(
     send_to_peer(peer_mac, packet.as_bytes())
 }
 
-
 unsafe extern "C" fn espnow_send_cb(
     tx_info: *const esp_idf_sys::wifi_tx_info_t,
     status: esp_idf_sys::esp_now_send_status_t,
@@ -76,7 +74,7 @@ unsafe extern "C" fn espnow_send_cb(
     } else {
         if !tx_info.is_null() {
             let info = &*tx_info;
-	    let mac = core::slice::from_raw_parts(info.des_addr, 6);
+            let mac = core::slice::from_raw_parts(info.des_addr, 6);
             info!(
                 "ESP-NOW send failed to {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
@@ -113,9 +111,9 @@ unsafe extern "C" fn espnow_recv_cb(
             sync_info: FtmSyncPacket {
                 sequence: packet.sequence,
                 is_initiator: packet.is_initiator,
-		mac_time: packet.mac_time,
+                mac_time: packet.mac_time,
             },
-	    _rx_mac_time: local_mac_time
+            _rx_mac_time: local_mac_time,
         });
     } else {
         info!(
@@ -202,7 +200,6 @@ pub fn get_stats() -> (u32, u32) {
 
 #[embassy_executor::task]
 pub async fn beacon_task() {
-
     let mut socket: Option<UdpSocket> = None;
     let mut bound_ip: Option<std::net::Ipv4Addr> = None;
 
@@ -293,17 +290,16 @@ pub async fn beacon_task() {
 pub async fn set_beacon(beacon_rate: i32) {
     let mut state = BEACON_STATE.lock().await;
     if beacon_rate == 0 {
-	state.should_beacon = false;
-	state.beacon_rate_ms = 200;
-	disconnect();
+        state.should_beacon = false;
+        state.beacon_rate_ms = 200;
+        disconnect();
     } else {
-	state.should_beacon = true;
-	if beacon_rate > 0 {
-	    state.beacon_rate_ms = beacon_rate;
-	} else {
-	    state.beacon_rate_ms = 200;
-	}
-	info!("Set beacon rate to {}", state.beacon_rate_ms);
+        state.should_beacon = true;
+        if beacon_rate > 0 {
+            state.beacon_rate_ms = beacon_rate;
+        } else {
+            state.beacon_rate_ms = 200;
+        }
+        info!("Set beacon rate to {}", state.beacon_rate_ms);
     }
 }
-

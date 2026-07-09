@@ -54,26 +54,25 @@ impl Config {
             .get_matches();
 
         let output_dir = {
-	    if let Some(output_path) = matches.get_one::<PathBuf>("output") {
-		let output_path_full = if output_path.exists() {
-		    // Path exists, create timestamped subdirectory
-		    let now: DateTime<Utc> = Utc::now();
-		    let timestamp = now.format("%Y%m%d_%H%M%S").to_string();
-		    let dirname = format!("log{}", timestamp);
-		    output_path.join(dirname)
-		} else {
-		    // Path doesn't exist, use it directly
-		    output_path.clone()
-		};
+            if let Some(output_path) = matches.get_one::<PathBuf>("output") {
+                let output_path_full = if output_path.exists() {
+                    // Path exists, create timestamped subdirectory
+                    let now: DateTime<Utc> = Utc::now();
+                    let timestamp = now.format("%Y%m%d_%H%M%S").to_string();
+                    let dirname = format!("log{}", timestamp);
+                    output_path.join(dirname)
+                } else {
+                    // Path doesn't exist, use it directly
+                    output_path.clone()
+                };
 
-		fs::create_dir_all(&output_path_full)?;
-		Some(output_path_full)
-	    } else {
-		None
-	    }
-	};
+                fs::create_dir_all(&output_path_full)?;
+                Some(output_path_full)
+            } else {
+                None
+            }
+        };
 
-	
         let server = matches.get_one::<String>("server").map(|s| {
             let parts: Vec<&str> = s.split(':').collect();
             if parts.len() != 2 {
@@ -140,7 +139,6 @@ pub fn get_client_identifier() -> String {
     // Ultimate fallback
     "unknown".to_string()
 }
-
 
 static SERVER_CONFIG: OnceCell<Arc<ServerConfig>> = OnceCell::new();
 

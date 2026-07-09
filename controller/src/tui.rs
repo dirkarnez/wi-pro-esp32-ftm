@@ -1,18 +1,18 @@
-use std::io;
-use tokio::sync::mpsc;
+use crossterm::{
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    execute,
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+};
+use log::{Log, Metadata, Record};
 use ratatui::{
+    Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::Style,
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
-    Terminal,
 };
-use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
-use log::{Log, Metadata, Record};
+use std::io;
+use tokio::sync::mpsc;
 
 use crate::srv::*;
 
@@ -24,12 +24,11 @@ pub enum Command {
     Shutdown,
 }
 
-
 struct App {
     logs: Vec<String>,
     input: String,
     clients: Vec<String>,
-    log_scroll: usize
+    log_scroll: usize,
 }
 
 impl App {
@@ -38,7 +37,7 @@ impl App {
             logs: Vec::new(),
             input: String::new(),
             clients: Vec::new(),
-	    log_scroll: 0
+            log_scroll: 0,
         }
     }
 
@@ -47,7 +46,7 @@ impl App {
         if self.logs.len() > 100 {
             self.logs.remove(0);
         }
-	self.log_scroll = self.logs.len().saturating_sub(1);
+        self.log_scroll = self.logs.len().saturating_sub(1);
     }
 }
 
@@ -76,7 +75,11 @@ pub async fn run_tui(
                 }
                 ServerEvent::ClientList(clients) => {
                     app.clients = clients.clone();
-                    app.add_log(format!("Clients ({}): {}", clients.len(), clients.join(", ")));
+                    app.add_log(format!(
+                        "Clients ({}): {}",
+                        clients.len(),
+                        clients.join(", ")
+                    ));
                 }
                 ServerEvent::Log(log) => {
                     app.add_log(log);
@@ -88,30 +91,25 @@ pub async fn run_tui(
         terminal.draw(|f| {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Min(1),
-                    Constraint::Length(3),
-                ].as_ref())
+                .constraints([Constraint::Min(1), Constraint::Length(3)].as_ref())
                 .split(f.area());
 
             // Log area
-            let logs: Vec<ListItem> = app.logs.iter()
+            let logs: Vec<ListItem> = app
+                .logs
+                .iter()
                 .map(|log| ListItem::new(log.as_str()))
                 .collect();
-            let logs_widget = List::new(logs)
-                .block(Block::default()
-                    .title("Server Logs")
-                    .borders(Borders::ALL));
-               let mut list_state = ListState::default();
-	    list_state.select(Some(app.log_scroll));
-	    f.render_stateful_widget(logs_widget, chunks[0], &mut list_state);
+            let logs_widget =
+                List::new(logs).block(Block::default().title("Server Logs").borders(Borders::ALL));
+            let mut list_state = ListState::default();
+            list_state.select(Some(app.log_scroll));
+            f.render_stateful_widget(logs_widget, chunks[0], &mut list_state);
 
             // Input area
             let input_widget = Paragraph::new(app.input.as_str())
                 .style(Style::default())
-                .block(Block::default()
-                    .title("Command")
-                    .borders(Borders::ALL));
+                .block(Block::default().title("Command").borders(Borders::ALL));
             f.render_widget(input_widget, chunks[1]);
         })?;
 

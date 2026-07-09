@@ -1,12 +1,12 @@
 use base64::{engine::general_purpose, Engine as _};
 use core::cell::RefCell;
+use core::sync::atomic::{AtomicU32, Ordering};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_sync::mutex::Mutex;
 use esp_idf_svc::sys as esp_idf_sys;
-use log::info;
 use heapless::String;
-use core::sync::atomic::{AtomicU32, Ordering};
+use log::info;
 
 pub static CSI_COUNTER: AtomicU32 = AtomicU32::new(0);
 
@@ -38,7 +38,6 @@ pub struct CsiData {
 
 pub static CSI_CHANNEL: Channel<CriticalSectionRawMutex, CsiData, 10> = Channel::new();
 
-
 pub struct FtmCsiState {
     /// When true, CSI packets whose MAC matches `mac` are saved to `buffer`
     /// instead of being dumped to serial.  Set to `true` by
@@ -62,7 +61,7 @@ impl FtmCsiState {
         }
     }
     pub fn _get_num_csi(self) -> usize {
-	self.buffer.len()
+        self.buffer.len()
     }
 }
 
@@ -96,33 +95,37 @@ pub async fn dump_csi_buf(print_output: bool) {
         return;
     }
 
-    if !print_output { return; }
+    if !print_output {
+        return;
+    }
     // Allocate formatting workspace once for the entire batch.
     let mut base64_buf = Box::new([0u8; MAX_BASE64_LEN]);
     let mut msg_buf = Box::new(String::<{ MAX_BASE64_LEN + 256 }>::new());
     use core::fmt::Write;
     let _ = write!(msg_buf, "CSI\x01");
-    print!("{}",msg_buf);
+    print!("{}", msg_buf);
     for csi_data in &entries {
-	let csi_slice = &csi_data.buf[..csi_data.len];
+        let csi_slice = &csi_data.buf[..csi_data.len];
         match general_purpose::STANDARD.encode_slice(csi_slice, &mut *base64_buf) {
             Ok(encoded_len) => {
                 if let Ok(encoded_str) = core::str::from_utf8(&base64_buf[..encoded_len]) {
-		    let mac_ts = (csi_data.timestamp_mac_raw as i64).wrapping_add(get_mac_ff_offset());
-		    msg_buf.clear();
-		    let _ = write!(msg_buf,
-				   "{}\x01\
+                    let mac_ts =
+                        (csi_data.timestamp_mac_raw as i64).wrapping_add(get_mac_ff_offset());
+                    msg_buf.clear();
+                    let _ = write!(
+                        msg_buf,
+                        "{}\x01\
 				    {}\x01\
 				    {}\x01\
 				    {}\x01\
 				    {}\x01",
-				   csi_data.channel,
-				   csi_data.channel2,
-				   encoded_str,
-				   calculate_precise_timestamp_ns(&csi_data, true),
-				   mac_ts
-		    );
-		    print!("{}",msg_buf);
+                        csi_data.channel,
+                        csi_data.channel2,
+                        encoded_str,
+                        calculate_precise_timestamp_ns(&csi_data, true),
+                        mac_ts
+                    );
+                    print!("{}", msg_buf);
                 } else {
                     info!("Failed to convert base64 to UTF-8");
                 }
@@ -130,12 +133,10 @@ pub async fn dump_csi_buf(print_output: bool) {
             Err(e) => {
                 info!("Base64 encoding failed: {:?}", e);
             }
-        }	
+        }
     }
     // entries (and its heap allocation) is dropped here.
 }
-
-
 
 pub fn calculate_precise_timestamp_ns(csi: &CsiData, is_ofdm: bool) -> u64 {
     if !is_ofdm {
@@ -185,14 +186,14 @@ pub unsafe extern "C" fn csi_rx_callback(
     let rx_timestamp: u64 = rx_ctrl.timestamp() as u64;
     let mac_32 = mac_timestamp & 0x00000000ffffffff;
     let rx_timestamp_wrap = if mac_32 > rx_timestamp {
-	// no overflow
-	rx_timestamp | (mac_timestamp & 0xffffffff00000000)
+        // no overflow
+        rx_timestamp | (mac_timestamp & 0xffffffff00000000)
     } else {
-	// mac clock lower 32 bits overflowed between rx_timestamp record and get_mac_counter()
-	rx_timestamp | ((mac_timestamp - 0x0000000100000000) & 0xffffffff00000000)
+        // mac clock lower 32 bits overflowed between rx_timestamp record and get_mac_counter()
+        rx_timestamp | ((mac_timestamp - 0x0000000100000000) & 0xffffffff00000000)
     };
     //rx_timestamp = rx_timestamp.wrapping_add(get_mac_ff_offset() as u64);
-   
+
     let csi_data = CsiData {
         mac: csi_info.mac,
         rssi: csi_info.rx_ctrl.rssi() as i8,
@@ -200,12 +201,12 @@ pub unsafe extern "C" fn csi_rx_callback(
         channel: csi_info.rx_ctrl.channel() as u8,
         channel2: csi_info.rx_ctrl.secondary_channel() as u8,
         timestamp_us: rx_ctrl.timestamp(),
-	timestamp_mac_raw: rx_timestamp_wrap,
+        timestamp_mac_raw: rx_timestamp_wrap,
         rxstart_time_cyc: rx_ctrl.rxstart_time_cyc() as u8,
         rxstart_time_cyc_dec: rx_ctrl.rxstart_time_cyc_dec() as u16,
-	sig_mode: rx_ctrl.sig_mode() as u8,
-	stbc: rx_ctrl.stbc() != 0,
-	mcs: rx_ctrl.mcs() as u8,
+        sig_mode: rx_ctrl.sig_mode() as u8,
+        stbc: rx_ctrl.stbc() != 0,
+        mcs: rx_ctrl.mcs() as u8,
         len: csi_info.len as usize,
         buf: csi_buffer,
     };
@@ -217,17 +218,17 @@ pub unsafe extern "C" fn csi_rx_callback(
 pub async fn csi_processing_task() {
     info!("CSI processing task started");
     let mut base64_buffer = Box::new([0u8; MAX_BASE64_LEN]);
-    let mut msg_buffer = Box::new(String::<{MAX_BASE64_LEN + 256}>::new());
+    let mut msg_buffer = Box::new(String::<{ MAX_BASE64_LEN + 256 }>::new());
 
     loop {
         let csi_data = CSI_CHANNEL.receive().await;
 
-	CSI_COUNTER.fetch_add(1, Ordering::Relaxed);
+        CSI_COUNTER.fetch_add(1, Ordering::Relaxed);
 
-	// add mac clock offset (can't call in ISR, needs a lock)
-	let mac_timestamp = (csi_data.timestamp_mac_raw as i64).wrapping_add(get_mac_ff_offset());
+        // add mac clock offset (can't call in ISR, needs a lock)
+        let mac_timestamp = (csi_data.timestamp_mac_raw as i64).wrapping_add(get_mac_ff_offset());
 
-	let buffered = {
+        let buffered = {
             let guard = FTM_CSI_STATE.lock().await;
             let mut state = guard.borrow_mut();
             if state.active && state.mac == csi_data.mac {
@@ -244,10 +245,10 @@ pub async fn csi_processing_task() {
                 false
             }
         };
-	if buffered {
-	    continue;
-	}
-	
+        if buffered {
+            continue;
+        }
+
         // info!(
         //     "Processing CSI from MAC: {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
         //     csi_data.mac[0],
@@ -268,7 +269,7 @@ pub async fn csi_processing_task() {
             match general_purpose::STANDARD.encode_slice(csi_slice, &mut *base64_buffer) {
                 Ok(encoded_len) => {
                     if let Ok(encoded_str) = core::str::from_utf8(&base64_buffer[..encoded_len]) {
-			msg_buffer.clear();
+                        msg_buffer.clear();
                         // Write everything to the buffer first
                         use core::fmt::Write;
                         let _ = write!(
@@ -278,7 +279,7 @@ pub async fn csi_processing_task() {
 					{:16x}\x01\
 					{}\x01\
 					{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}\x01",
-			    mac_timestamp,
+                            mac_timestamp,
                             csi_data.seq,
                             csi_data.mac[0],
                             csi_data.mac[1],
@@ -320,11 +321,15 @@ pub async fn csi_processing_task() {
 #[embassy_executor::task]
 pub async fn stats_task() {
     use embassy_time::{Duration, Timer};
-    
+
     loop {
         Timer::after(Duration::from_secs(10)).await;
-        
+
         let count = CSI_COUNTER.swap(0, Ordering::Relaxed);
-        info!("CSI packets in last 10s: {} ({:.1}/sec)", count, count as f32 / 10.0);
+        info!(
+            "CSI packets in last 10s: {} ({:.1}/sec)",
+            count,
+            count as f32 / 10.0
+        );
     }
 }

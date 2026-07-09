@@ -1,8 +1,8 @@
-use tokio::sync::mpsc;
-use zeromq::{PubSocket, SocketSend, ZmqMessage, Socket};
-use log::{info, error};
-use std::collections::HashMap;
 use crate::tlv::ESPEvent;
+use log::{error, info};
+use std::collections::HashMap;
+use tokio::sync::mpsc;
+use zeromq::{PubSocket, Socket, SocketSend, ZmqMessage};
 
 /// Generic publisher for ESPEvent data over ZMQ PUB sockets
 /// Routes different event types to different IPC endpoints
@@ -51,22 +51,25 @@ impl SocketManager {
     }
 
     /// Get or create a socket for the given IPC address
-    async fn get_socket(&mut self, ipc_path: &str) -> Result<&mut PubSocket, Box<dyn std::error::Error>> {
-    if !self.sockets.contains_key(ipc_path) {
-        // Remove stale socket file if it exists
-        if let Some(file_path) = ipc_path.strip_prefix("ipc://") {
-            if std::path::Path::new(file_path).exists() {
-                std::fs::remove_file(file_path)?;
-                info!("Removed stale IPC socket file: {}", file_path);
+    async fn get_socket(
+        &mut self,
+        ipc_path: &str,
+    ) -> Result<&mut PubSocket, Box<dyn std::error::Error>> {
+        if !self.sockets.contains_key(ipc_path) {
+            // Remove stale socket file if it exists
+            if let Some(file_path) = ipc_path.strip_prefix("ipc://") {
+                if std::path::Path::new(file_path).exists() {
+                    std::fs::remove_file(file_path)?;
+                    info!("Removed stale IPC socket file: {}", file_path);
+                }
             }
-        }
 
-        let mut socket = PubSocket::new();
-        socket.bind(ipc_path).await?;
-        info!("IPC publisher: bound to {}", ipc_path);
-        self.sockets.insert(ipc_path.to_string(), socket);
-    }
-    Ok(self.sockets.get_mut(ipc_path).unwrap())
+            let mut socket = PubSocket::new();
+            socket.bind(ipc_path).await?;
+            info!("IPC publisher: bound to {}", ipc_path);
+            self.sockets.insert(ipc_path.to_string(), socket);
+        }
+        Ok(self.sockets.get_mut(ipc_path).unwrap())
     }
 
     /// Publish an event to the appropriate socket
@@ -82,7 +85,7 @@ impl SocketManager {
                 let data = rmp_serde::to_vec(ftm_event)?;
                 (path, data)
             }
-	    ESPEvent::DBG(dbg_event) => {
+            ESPEvent::DBG(dbg_event) => {
                 let path = "ipc:///tmp/wipro_dbg_data";
                 let data = rmp_serde::to_vec(dbg_event)?;
                 (path, data)
@@ -118,4 +121,3 @@ async fn run_publisher(mut rx: mpsc::Receiver<ESPEvent>) -> Result<(), Box<dyn s
     info!("IPC publisher shutting down");
     Ok(())
 }
-
