@@ -59,15 +59,15 @@ jobs:
         shell: bash
         run: |
            cp ./firmware/bin/* ./dist/firmware/ && \
-           cp ./controller/controller ./dist/controller/ && \
-           cp ./controller/server ./dist/controller/ && \
+           cp ./controller/controller ./dist/controller/controller-linux && \
+           cp ./controller/server ./dist/controller/server-linux && \
            cp ./flash.sh ./dist/flash-esp32-s3.sh
            
       - if: ${{ matrix.os == 'windows-latest' }}
         shell: bash
         run: |
-           cp ./controller/target/x86_64-pc-windows-msvc/debug/controller.exe ./dist/controller/ && \
-           cp ./controller/target/x86_64-pc-windows-msvc/debug/server.exe ./dist/controller/
+           cp ./controller/target/x86_64-pc-windows-msvc/debug/controller.exe ./dist/controller/controller-win64.exe && \
+           cp ./controller/target/x86_64-pc-windows-msvc/debug/server.exe ./dist/controller/server-win64.exe && \
            cp ./flash-esp32-s3.cmd ./dist/
            
       - if: ${{ matrix.os == 'ubuntu-latest' }}
