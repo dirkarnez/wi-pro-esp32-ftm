@@ -359,7 +359,7 @@ pub async fn process_report(report: &FtmReport) {
             mean_range / report.meta.num_entries as f32,
             report.meta.num_entries,
 			report.meta._rtt_est,
-			report.meta._dist_est,
+			report.meta._dist_est
         );
     }
 }
