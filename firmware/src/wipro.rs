@@ -335,21 +335,17 @@ pub async fn process_report(report: &FtmReport) {
         let cir = apply_idft(idft, &h);
         let range = estimate_range(&cir, idft);
         mean_range += range;
-        print!(
-            "\x02RANGE\x01{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}\x01T2:{}\x01estimated range{}\x03\r\n",
-            report.meta.peer_mac[0],
-            report.meta.peer_mac[1],
-            report.meta.peer_mac[2],
-            report.meta.peer_mac[3],
-            report.meta.peer_mac[4],
-            report.meta.peer_mac[5],
-            ftm_entry.t2,
-            range
-        );
+		print!(
+		    "\x02RANGE\x01{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}\x01{}\x01{}\x03\r\n",
+		    report.meta.peer_mac[0], report.meta.peer_mac[1], report.meta.peer_mac[2],
+		    report.meta.peer_mac[3], report.meta.peer_mac[4], report.meta.peer_mac[5],
+		    ftm_entry.t2,
+		    range
+		);
     }
     if report.meta.num_entries > 0 {
         info!(
-            "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}: {} meters, num_entries: {}, _rtt_est: {}, _dist_est: {}, ",
+            "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}: mean estimated range: {} meters, num_entries: {}, _rtt_est: {}, _dist_est: {}, ",
             report.meta.peer_mac[0],
             report.meta.peer_mac[1],
             report.meta.peer_mac[2],
