@@ -1,0 +1,104 @@
+name: build
+
+on:
+  push:
+    # Sequence of patterns matched against refs/tags
+    tags:
+      - '*' # Push events to matching v*, i.e. v1.0, v20.15.10
+
+permissions:
+    contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ windows-latest, ubuntu-latest ]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+          fetch-depth: 0 # <-- clone with complete history
+          
+      - if: ${{ matrix.os == 'windows-latest' }}
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: x86_64-pc-windows-msvc
+          
+      - if: ${{ matrix.os == 'ubuntu-latest' }}
+        run: |
+          set -e
+          sudo chmod +x ./setup.sh && \
+          sudo chmod +x ./build_controller.sh && \
+          sudo chmod +x ./build_firmware.sh && \
+          ./setup.sh && \
+          ./build_controller.sh && \
+          ./build_firmware.sh
+          
+      - if: ${{ matrix.os == 'windows-latest' }}
+        shell: bash
+        run: |
+          ./build_controller.sh --target x86_64-pc-windows-msvc
+          
+      # ./wi-pro-esp32-ftm/firmware/bin:
+      # bootloader.bin
+      # firmware
+      # firmware.bin
+      # firmware.dis
+      # partition-table.bin
+      - shell: bash
+        run: |
+           mkdir -pv dist/{firmware,controller}
+           
+      - if: ${{ matrix.os == 'ubuntu-latest' }}
+        shell: bash
+        run: |
+           cp ./firmware/bin/* ./dist/firmware/ && \
+           cp ./controller/controller ./dist/controller/ && \
+           cp ./controller/server ./dist/controller/ && \
+           cp ./flash.sh ./dist/flash-esp32-s3.sh
+           
+      - if: ${{ matrix.os == 'windows-latest' }}
+        shell: bash
+        run: |
+           cp ./controller/target/x86_64-pc-windows-msvc/debug/controller.exe ./dist/controller/ && \
+           cp ./controller/target/x86_64-pc-windows-msvc/debug/server.exe ./dist/controller/
+           cp ./flash-esp32-s3.cmd ./dist/
+           
+      - if: ${{ matrix.os == 'ubuntu-latest' }}
+        name: Archive Release
+        uses: thedoctor0/zip-release@master
+        with:
+          type: 'zip'
+          directory: 'dist/firmware'
+          filename: "${{ github.event.repository.name }}-firmware-${{ github.ref_name }}.zip"
+     
+      - name: Archive Release
+        uses: thedoctor0/zip-release@master
+        with:
+          type: 'zip'
+          directory: 'dist/controller'
+          filename: "${{ github.event.repository.name }}-controller-${{ github.ref_name }}-${{ matrix.os }}.zip"
+          
+      - shell: bash
+        run: |
+          ls -R
+          
+      - name: Release prebuilt
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: "dist/**/*.zip"
+          allowUpdates: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          
+    # # this action by default runs "idf.py build"
+    #   - name: esp-idf build
+    #     uses: espressif/esp-idf-ci-action@v1.2.0
+    #     with:
+    #       esp_idf_version: v5.5.2
+    #       target: esp32c5
