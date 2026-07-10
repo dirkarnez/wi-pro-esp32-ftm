@@ -349,7 +349,7 @@ pub async fn process_report(report: &FtmReport) {
     }
     if report.meta.num_entries > 0 {
         info!(
-            "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}: {} meters, num_entries: {}",
+            "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}: {} meters, num_entries: {}, _rtt_est: {}, _dist_est: {}, ",
             report.meta.peer_mac[0],
             report.meta.peer_mac[1],
             report.meta.peer_mac[2],
@@ -357,7 +357,9 @@ pub async fn process_report(report: &FtmReport) {
             report.meta.peer_mac[4],
             report.meta.peer_mac[5],
             mean_range / report.meta.num_entries as f32,
-            report.meta.num_entries
+            report.meta.num_entries,
+			report.meta._rtt_est,
+			report.meta._dist_est,
         );
     }
 }
